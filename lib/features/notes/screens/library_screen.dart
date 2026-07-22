@@ -4,13 +4,16 @@ import 'package:intl/intl.dart';
 import 'note_detail_screen.dart';
 import '../providers/notes_provider.dart';
 import '../../../models/note.dart';
+import '../../../services/database/database_service.dart';
+import '../../../widgets/keyword_chip.dart';
+import '../../search/screens/search_screen.dart';
 
 class LibraryScreen extends ConsumerWidget {
   const LibraryScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final query = ref.watch(searchQueryProvider);
+    final query = ref.watch(librarySearchQueryProvider);
     final notesAsync = ref.watch(notesSearchProvider(query));
 
     return Scaffold(
@@ -31,16 +34,31 @@ class LibraryScreen extends ConsumerWidget {
               ),
             ),
             const SizedBox(width: 10),
-            Text(
-              'Lecture Note AI',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                color: Theme.of(context).colorScheme.primary,
-                fontWeight: FontWeight.bold,
+            Expanded(
+              child: Text(
+                'Lecture Note AI',
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  color: Theme.of(context).colorScheme.primary,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
           ],
         ),
         centerTitle: false,
+        actions: [
+          IconButton(
+            icon: Icon(Icons.search, color: Theme.of(context).colorScheme.onSurfaceVariant),
+            tooltip: 'Full Search',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const SearchScreen()),
+              );
+            },
+          ),
+          const SizedBox(width: 8),
+        ],
       ),
       body: CustomScrollView(
         slivers: [
@@ -72,7 +90,42 @@ class LibraryScreen extends ConsumerWidget {
                     (context, index) {
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 16.0),
-                        child: _NoteCard(note: notes[index]),
+                        child: Dismissible(
+                          key: Key('note_${notes[index].id}'),
+                          direction: DismissDirection.endToStart,
+                          background: Container(
+                            alignment: Alignment.centerRight,
+                            padding: const EdgeInsets.only(right: 24),
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).colorScheme.error,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: const Icon(Icons.delete, color: Colors.white),
+                          ),
+                          confirmDismiss: (direction) async {
+                            return await showDialog<bool>(
+                              context: context,
+                              builder: (ctx) => AlertDialog(
+                                title: const Text('Delete Note'),
+                                content: const Text('Are you sure you want to delete this note?'),
+                                actions: [
+                                  TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+                                  FilledButton(
+                                    onPressed: () => Navigator.of(ctx).pop(true),
+                                    style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
+                                    child: const Text('Delete'),
+                                  ),
+                                ],
+                              ),
+                            ) ?? false;
+                          },
+                          onDismissed: (direction) async {
+                            final dbService = ref.read(databaseProvider);
+                            await dbService.deleteNote(notes[index].id);
+                            ref.invalidate(notesProvider);
+                          },
+                          child: _NoteCard(note: notes[index]),
+                        ),
                       );
                     },
                     childCount: notes.length,
@@ -101,7 +154,7 @@ class LibraryScreen extends ConsumerWidget {
   Widget _buildSearchBar(BuildContext context, WidgetRef ref) {
     return TextField(
       onChanged: (val) {
-        ref.read(searchQueryProvider.notifier).updateQuery(val);
+        ref.read(librarySearchQueryProvider.notifier).updateQuery(val);
       },
       decoration: InputDecoration(
         hintText: 'Search notes, keywords...',
@@ -200,7 +253,7 @@ class _NoteCard extends StatelessWidget {
                 spacing: 8,
                 runSpacing: 8,
                 children: (parsedSummary['keywords'] as String).split(',').take(3).map((k) {
-                  return _buildChip(context, k.trim(), isHighlight: false);
+                  return KeywordChip(label: k.trim());
                 }).toList(),
               ),
           ],
@@ -209,19 +262,4 @@ class _NoteCard extends StatelessWidget {
     );
   }
 
-  Widget _buildChip(BuildContext context, String label, {required bool isHighlight}) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      decoration: BoxDecoration(
-        color: isHighlight ? const Color(0xFFFFF4E5) : const Color(0xFFedeeef),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Text(
-        label,
-        style: Theme.of(context).textTheme.labelMedium?.copyWith(
-          color: isHighlight ? const Color(0xFF93000a) : Theme.of(context).colorScheme.onSurfaceVariant,
-        ),
-      ),
-    );
-  }
 }

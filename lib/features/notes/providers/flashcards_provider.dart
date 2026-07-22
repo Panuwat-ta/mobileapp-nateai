@@ -22,14 +22,20 @@ final flashcardsProvider = Provider<AsyncValue<List<Flashcard>>>((ref) {
           }
         }
       } else if (summary.containsKey('keywords')) {
-         final keywords = (summary['keywords'] as String).split(',');
-         for(final kw in keywords) {
-             if(kw.trim().isNotEmpty) {
+         final kwData = summary['keywords'];
+         List<String> keywords = [];
+         if (kwData is String) {
+           keywords = kwData.split(',');
+         } else if (kwData is List) {
+           keywords = kwData.map((e) => e.toString()).toList();
+         }
+         for (final kw in keywords) {
+             if (kw.trim().isNotEmpty) {
                  flashcards.add(Flashcard(
                     noteId: note.id,
                     noteTitle: note.title,
                     term: kw.trim(),
-                    definition: 'Definition for ${kw.trim()} from ${note.title}', // Dummy definition if none provided
+                    definition: 'Key concept from ${note.title}',
                  ));
              }
          }

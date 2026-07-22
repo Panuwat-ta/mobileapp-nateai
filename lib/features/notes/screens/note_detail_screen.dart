@@ -1,8 +1,17 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../../../utils/pdf_export_helper.dart';
+import '../../../utils/result.dart';
 import '../../../models/note.dart';
+import '../../../services/llama/ai_pipeline_manager.dart';
+import '../../../services/database/database_service.dart';
+import '../../../widgets/keyword_chip.dart';
+import '../../../widgets/summary_card.dart';
+import '../providers/notes_provider.dart';
+import '../../flashcards/screens/flashcard_screen.dart';
+import '../../../utils/format_helper.dart';
 
 class NoteDetailScreen extends ConsumerStatefulWidget {
   final Note note;
@@ -19,7 +28,7 @@ class _NoteDetailScreenState extends ConsumerState<NoteDetailScreen> {
   Widget build(BuildContext context) {
     final note = widget.note;
     final parsedSummary = note.parsedSummary;
-    final summaryText = parsedSummary['summary'] ?? 'No summary available.';
+    final summaryText = parsedSummary['full_markdown_summary'] ?? parsedSummary['summary'] ?? 'No summary available.';
     final title = note.title.isEmpty ? 'Untitled Note' : note.title;
 
     return Scaffold(
@@ -43,11 +52,14 @@ class _NoteDetailScreenState extends ConsumerState<NoteDetailScreen> {
               ),
             ),
             const SizedBox(width: 10),
-            Text(
-              'Lecture Note AI',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                color: Theme.of(context).colorScheme.primary,
-                fontWeight: FontWeight.bold,
+            Expanded(
+              child: Text(
+                title,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  color: Theme.of(context).colorScheme.primary,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
           ],
@@ -55,14 +67,48 @@ class _NoteDetailScreenState extends ConsumerState<NoteDetailScreen> {
         centerTitle: false,
         actions: [
           IconButton(
+            icon: Icon(Icons.delete_outline, color: Theme.of(context).colorScheme.error),
+            tooltip: 'Delete Note',
+            onPressed: () async {
+              final confirmed = await showDialog<bool>(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  title: const Text('Delete Note'),
+                  content: const Text('Are you sure you want to delete this note permanently?'),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Cancel')),
+                    FilledButton(
+                      onPressed: () => Navigator.of(ctx).pop(true),
+                      style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
+                      child: const Text('Delete'),
+                    ),
+                  ],
+                ),
+              );
+              if (confirmed == true && context.mounted) {
+                final dbService = ref.read(databaseProvider);
+                await dbService.deleteNote(note.id);
+                ref.invalidate(notesProvider);
+                if (context.mounted) Navigator.of(context).pop();
+              }
+            },
+          ),
+          IconButton(
             icon: Icon(Icons.picture_as_pdf, color: Theme.of(context).colorScheme.primary),
             tooltip: 'Export to PDF',
             onPressed: () async {
               String exportTitle = title;
-              String content = _tabIndex == 0 
-                  ? summaryText 
-                  : note.rawTranscript;
+              String content = FormatHelper.formatToRequestedText(note);
               await PdfExportHelper.exportTextToPdf(exportTitle, content);
+            },
+          ),
+          IconButton(
+            icon: Icon(Icons.quiz_outlined, color: Theme.of(context).colorScheme.primary),
+            tooltip: 'View Flashcards',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => FlashcardScreen(noteId: note.id)),
+              );
             },
           ),
           const SizedBox(width: 8),
@@ -100,23 +146,93 @@ class _NoteDetailScreenState extends ConsumerState<NoteDetailScreen> {
               decoration: const BoxDecoration(
                 border: Border(bottom: BorderSide(color: Color(0xFFDDE2E5))),
               ),
-              child: Row(
-                children: [
-                  _buildTab('AI Summary', 0),
-                  const SizedBox(width: 24),
-                  _buildTab('Raw Transcript', 1),
-                ],
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    _buildTab('AI Summary', 0),
+                    const SizedBox(width: 24),
+                    _buildTab('Raw Transcript', 1),
+                    const SizedBox(width: 24),
+                    _buildTab('Final Output', 2),
+                  ],
+                ),
               ),
             ),
             const SizedBox(height: 24),
 
             // Bento Grid Content
-            if (_tabIndex == 0) _buildAISummary(context, note, summaryText, parsedSummary) else _buildRawTranscript(context, note),
+            if (_tabIndex == 0) 
+              _buildAISummary(context, note, summaryText, parsedSummary) 
+            else if (_tabIndex == 1)
+              _buildRawTranscript(context, note)
+            else
+              _buildFinalOutput(context, note),
           ],
         ),
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {},
+        onPressed: () async {
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (_) => const Center(child: CircularProgressIndicator()),
+          );
+          
+          try {
+            final pipeline = ref.read(aiPipelineProvider);
+            final result = await pipeline.executePass3(note.rawTranscript);
+            
+            if (result is Success<String> && context.mounted) {
+              Navigator.of(context).pop(); // Close loading
+              
+              try {
+                final parsed = jsonDecode(result.data);
+                final flashcards = parsed['flashcards'] as List?;
+                final count = flashcards?.length ?? 0;
+                
+                final existingSummary = note.parsedSummary;
+                existingSummary['flashcards'] = flashcards;
+                
+                final dbService = ref.read(databaseProvider);
+                await dbService.updateNote(note.id, {
+                  'summary_json': jsonEncode(existingSummary),
+                });
+                
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Generated $count flashcards! Check the Flashcards tab.'),
+                      behavior: SnackBarBehavior.floating,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  );
+                  ref.invalidate(notesProvider);
+                }
+              } catch (_) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Flashcards generated! Check the Flashcards tab.')),
+                  );
+                }
+              }
+            } else {
+              if (context.mounted) {
+                Navigator.of(context).pop();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Failed to generate flashcards')),
+                );
+              }
+            }
+          } catch (e) {
+            if (context.mounted) {
+              Navigator.of(context).pop();
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Error: $e')),
+              );
+            }
+          }
+        },
         backgroundColor: Theme.of(context).colorScheme.primaryContainer,
         foregroundColor: Theme.of(context).colorScheme.onPrimaryContainer,
         icon: const Icon(Icons.quiz),
@@ -153,49 +269,9 @@ class _NoteDetailScreenState extends ConsumerState<NoteDetailScreen> {
   Widget _buildAISummary(BuildContext context, Note note, String summaryText, Map<String, dynamic> parsedSummary) {
     return Column(
       children: [
-        // Immediate Summary Card
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surfaceContainerLowest,
-            border: Border.all(color: const Color(0xFFDDE2E5)),
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(
-                    children: [
-                      Icon(Icons.psychology, color: Theme.of(context).colorScheme.primaryContainer),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Immediate Summary',
-                        style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                          color: Theme.of(context).colorScheme.primary,
-                          fontSize: 20,
-                        ),
-                      ),
-                    ],
-                  ),
-                  IconButton(
-                    icon: Icon(Icons.content_copy, color: Theme.of(context).colorScheme.onSurfaceVariant, size: 20),
-                    onPressed: () {},
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Text(
-                summaryText,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurface,
-                ),
-              ),
-            ],
-          ),
+        SummaryCard(
+          title: 'Immediate Summary',
+          content: summaryText,
         ),
         const SizedBox(height: 16),
 
@@ -220,76 +296,20 @@ class _NoteDetailScreenState extends ConsumerState<NoteDetailScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: (parsedSummary['keywords'] as String).split(',').map((term) => _buildTermChip(term.trim())).toList(),
-                ),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: (parsedSummary['keywords'] as String).split(',').map((term) => KeywordChip(label: term.trim())).toList(),
+                  ),
               ],
             ),
           ),
           const SizedBox(height: 16),
         ],
-
-        // Tasks & Deadlines
-        if (parsedSummary['homework'] != null || parsedSummary['exam'] != null) ...[
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFFF4E5), // warning-muted
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Icon(Icons.assignment, color: Theme.of(context).colorScheme.errorContainer.withValues(alpha: 0.8)),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Tasks & Deadlines',
-                      style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                        color: const Color(0xFF93000a), // on-error-container
-                        fontSize: 20,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                if (parsedSummary['homework'] != null)
-                  _buildTaskSection(parsedSummary['homework'], Icons.event, true),
-                if (parsedSummary['exam'] != null)
-                  _buildTaskSection(parsedSummary['exam'], Icons.menu_book, false),
-              ],
-            ),
-          ),
-          const SizedBox(height: 80),
-        ],
       ],
     );
   }
   
-  Widget _buildTaskSection(dynamic taskData, IconData icon, bool isWarning) {
-    if (taskData is List) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: taskData.map((item) {
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 12.0),
-            child: _buildTaskItem(item['title'] ?? 'Task', item['description'] ?? '', icon, isWarning),
-          );
-        }).toList(),
-      );
-    } else if (taskData is String) {
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 12.0),
-        child: _buildTaskItem('Task', taskData, icon, isWarning),
-      );
-    }
-    return const SizedBox();
-  }
-
   Widget _buildRawTranscript(BuildContext context, Note note) {
     return Text(
       note.rawTranscript,
@@ -299,66 +319,22 @@ class _NoteDetailScreenState extends ConsumerState<NoteDetailScreen> {
     );
   }
 
-  Widget _buildTermChip(String text) {
+  Widget _buildFinalOutput(BuildContext context, Note note) {
+    final text = FormatHelper.formatToRequestedText(note);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFe7e8e9), // surface-container-high
+        color: Theme.of(context).colorScheme.surfaceContainerLowest,
         border: Border.all(color: const Color(0xFFDDE2E5)),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(12),
       ),
-      child: Text(
+      child: SelectableText(
         text,
-        style: Theme.of(context).textTheme.labelMedium?.copyWith(
-          color: Theme.of(context).colorScheme.primary,
+        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+          color: Theme.of(context).colorScheme.onSurface,
         ),
       ),
-    );
-  }
-
-  Widget _buildTaskItem(String title, String subtitle, IconData icon, bool isWarning) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: 24,
-          height: 24,
-          child: Checkbox(
-            value: false,
-            onChanged: (val) {},
-            activeColor: Theme.of(context).colorScheme.primary,
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurface,
-                ),
-              ),
-              if (subtitle.isNotEmpty)
-                Row(
-                  children: [
-                    Icon(icon, size: 14, color: isWarning ? Theme.of(context).colorScheme.error : Theme.of(context).colorScheme.onSurfaceVariant),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: Text(
-                        subtitle,
-                        style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                          color: isWarning ? Theme.of(context).colorScheme.error : Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-            ],
-          ),
-        ),
-      ],
     );
   }
 }

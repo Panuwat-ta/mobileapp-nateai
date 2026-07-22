@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 import 'record_state.dart';
@@ -9,6 +11,8 @@ import '../../notes/providers/notes_provider.dart';
 
 class RecordNotifier extends Notifier<RecordState> {
   String _currentTranscript = '';
+  Timer? _timer;
+  Timer? _sttCheckTimer;
 
   @override
   RecordState build() {
@@ -17,7 +21,14 @@ class RecordNotifier extends Notifier<RecordState> {
 
   void startRecording() async {
     state = const Recording();
+    _currentTranscript = '';
     final stt = ref.read(sttServiceProvider);
+    
+    ref.read(recordingTimeProvider.notifier).reset();
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      ref.read(recordingTimeProvider.notifier).increment();
+    });
     
     try {
       if (await FlutterOverlayWindow.isPermissionGranted()) {
@@ -34,11 +45,13 @@ class RecordNotifier extends Notifier<RecordState> {
     } catch (_) {}
 
     final result = await stt.startListening((text) {
-      _currentTranscript = text;
-      state = Recording(transcript: text);
-      try {
-        FlutterOverlayWindow.shareData(text);
-      } catch (_) {}
+      if (text.isNotEmpty) {
+        _currentTranscript = text;
+        state = Recording(transcript: _currentTranscript);
+        try {
+          FlutterOverlayWindow.shareData(_currentTranscript);
+        } catch (_) {}
+      }
     });
     
     if (result is Failure) {
@@ -48,10 +61,34 @@ class RecordNotifier extends Notifier<RecordState> {
           state = const Idle();
         }
       });
+      return;
     }
+
+    // Auto-restart STT if it stops due to pause timeout
+    _sttCheckTimer?.cancel();
+    _sttCheckTimer = Timer.periodic(const Duration(seconds: 2), (timer) async {
+      if (state is Recording && !stt.isListening) {
+        // STT stopped due to pause timeout, restart it
+        final accumulatedText = _currentTranscript;
+        await stt.startListening((text) {
+          if (text.isNotEmpty) {
+            // Append new text to accumulated transcript
+            _currentTranscript = accumulatedText.isEmpty
+                ? text
+                : '$accumulatedText $text';
+            state = Recording(transcript: _currentTranscript);
+            try {
+              FlutterOverlayWindow.shareData(_currentTranscript);
+            } catch (_) {}
+          }
+        });
+      }
+    });
   }
 
   void stopRecording() async {
+    _timer?.cancel();
+    _sttCheckTimer?.cancel();
     final stt = ref.read(sttServiceProvider);
     await stt.stopListening();
     
@@ -71,7 +108,7 @@ class RecordNotifier extends Notifier<RecordState> {
     state = Idle(transcript: _currentTranscript);
   }
 
-  void saveAndProcess() async {
+  void saveAndProcess([String? customTitle]) async {
     if (_currentTranscript.isEmpty) return;
     
     state = const AiProcessing();
@@ -82,10 +119,22 @@ class RecordNotifier extends Notifier<RecordState> {
     if (result is Success<String>) {
       state = const Saving();
       
+      // Parse the JSON to extract title
+      String noteTitle = 'New Note';
+      try {
+        final parsed = jsonDecode(result.data) as Map<String, dynamic>;
+        noteTitle = parsed['title'] as String? ?? 'New Note';
+        if (noteTitle.isEmpty) noteTitle = 'New Note';
+      } catch (_) {}
+      
+      if (customTitle != null && customTitle.isNotEmpty) {
+        noteTitle = customTitle;
+      }
+      
       final dbService = ref.read(databaseProvider);
       
       int noteId = await dbService.insertNote({
-        'title': 'New Note',
+        'title': noteTitle,
         'raw_transcript': _currentTranscript,
         'summary_json': result.data,
         'created_at': DateTime.now().millisecondsSinceEpoch,
@@ -98,18 +147,51 @@ class RecordNotifier extends Notifier<RecordState> {
       
       state = const Completed();
       
-      Future.delayed(const Duration(milliseconds: 500), () {
-        state = Viewing(noteId);
+      Future.delayed(const Duration(milliseconds: 1500), () {
+        _currentTranscript = '';
+        state = const Idle();
       });
     } else {
-      state = const ErrorState('AI processing failed. Saved as plain text.');
-      Future.delayed(const Duration(seconds: 2), () {
-        state = Idle(transcript: _currentTranscript);
+      // Save as plain text even if AI processing fails
+      state = const Saving();
+      final dbService = ref.read(databaseProvider);
+      
+      String fallbackTitle = _currentTranscript.split(RegExp(r'[.!?\n]')).first.trim();
+      if (fallbackTitle.length > 60) fallbackTitle = '${fallbackTitle.substring(0, 57)}...';
+      if (fallbackTitle.isEmpty) fallbackTitle = 'Untitled Note';
+      
+      if (customTitle != null && customTitle.isNotEmpty) {
+        fallbackTitle = customTitle;
+      }
+      
+      int noteId = await dbService.insertNote({
+        'title': fallbackTitle,
+        'raw_transcript': _currentTranscript,
+        'summary_json': jsonEncode({'title': fallbackTitle, 'summary': _currentTranscript}),
+        'created_at': DateTime.now().millisecondsSinceEpoch,
+      });
+      
+      if (noteId != -1) {
+        ref.invalidate(notesProvider);
+      }
+      
+      state = const Completed();
+      Future.delayed(const Duration(milliseconds: 1500), () {
+        _currentTranscript = '';
+        state = const Idle();
       });
     }
   }
   
+  void setManualTranscript(String text) {
+    _currentTranscript = text;
+    state = Idle(transcript: _currentTranscript);
+  }
+
   void reset() {
+    _timer?.cancel();
+    _sttCheckTimer?.cancel();
+    ref.read(recordingTimeProvider.notifier).reset();
     _currentTranscript = '';
     state = const Idle();
   }
@@ -117,4 +199,16 @@ class RecordNotifier extends Notifier<RecordState> {
 
 final recordStateProvider = NotifierProvider<RecordNotifier, RecordState>(() {
   return RecordNotifier();
+});
+
+class RecordingTimeNotifier extends Notifier<int> {
+  @override
+  int build() => 0;
+
+  void increment() => state++;
+  void reset() => state = 0;
+}
+
+final recordingTimeProvider = NotifierProvider<RecordingTimeNotifier, int>(() {
+  return RecordingTimeNotifier();
 });

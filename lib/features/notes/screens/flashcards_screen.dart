@@ -54,11 +54,14 @@ class _FlashcardsScreenState extends ConsumerState<FlashcardsScreen> {
               ),
             ),
             const SizedBox(width: 10),
-            Text(
-              'Lecture Note AI',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                color: Theme.of(context).colorScheme.primary,
-                fontWeight: FontWeight.bold,
+            Expanded(
+              child: Text(
+                'Lecture Note AI',
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  color: Theme.of(context).colorScheme.primary,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
           ],

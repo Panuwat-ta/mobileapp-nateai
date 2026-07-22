@@ -2,9 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 
-import 'dart:io';
-import 'package:path_provider/path_provider.dart';
-
 import '../../home/screens/main_screen.dart';
 class PermissionScreen extends StatelessWidget {
   const PermissionScreen({super.key});
@@ -14,15 +11,21 @@ class PermissionScreen extends StatelessWidget {
     bool overlayGranted = await FlutterOverlayWindow.isPermissionGranted();
     if (!overlayGranted) {
       await FlutterOverlayWindow.requestPermission();
+      overlayGranted = await FlutterOverlayWindow.isPermissionGranted();
     }
 
-    final dir = await getApplicationDocumentsDirectory();
-    final file = File('${dir.path}/has_seen_permission.txt');
-    await file.writeAsString('true');
+    final micGranted = await Permission.microphone.isGranted;
 
-    if (context.mounted) {
+    if (micGranted && overlayGranted && context.mounted) {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const MainScreen()),
+      );
+    } else if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Permissions are required to use the app. Please grant all permissions.'),
+          behavior: SnackBarBehavior.floating,
+        ),
       );
     }
   }

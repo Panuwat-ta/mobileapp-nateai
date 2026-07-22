@@ -10,7 +10,8 @@ final databaseProvider = Provider<DatabaseService>((ref) {
 });
 
 class DatabaseService {
-  Database? _database;
+  static Database? _database;
+  static const int _version = 3;
 
   Future<Database> get database async {
     if (_database != null) return _database!;
@@ -23,8 +24,9 @@ class DatabaseService {
     String path = join(documentsDirectory.path, 'noteai.db');
     return await openDatabase(
       path,
-      version: 1,
+      version: _version,
       onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
     );
   }
 
@@ -40,14 +42,13 @@ class DatabaseService {
       )
     ''');
 
-    // 2. Create FTS5 virtual table for fast full-text search
+    // 2. Create FTS4 virtual table for fast full-text search
     await db.execute('''
-      CREATE VIRTUAL TABLE notes_fts USING fts5(
+      CREATE VIRTUAL TABLE notes_fts USING fts4(
+        content='notes', 
         title, 
         raw_transcript, 
-        summary_json, 
-        content='notes', 
-        content_rowid='id'
+        summary_json
       )
     ''');
 
@@ -60,20 +61,66 @@ class DatabaseService {
     ''');
     
     await db.execute('''
-      CREATE TRIGGER notes_ad AFTER DELETE ON notes BEGIN
+      CREATE TRIGGER notes_ad BEFORE DELETE ON notes BEGIN
         INSERT INTO notes_fts(notes_fts, rowid, title, raw_transcript, summary_json) 
         VALUES ('delete', old.id, old.title, old.raw_transcript, old.summary_json);
       END;
     ''');
     
     await db.execute('''
-      CREATE TRIGGER notes_au AFTER UPDATE ON notes BEGIN
+      CREATE TRIGGER notes_au BEFORE UPDATE ON notes BEGIN
         INSERT INTO notes_fts(notes_fts, rowid, title, raw_transcript, summary_json) 
         VALUES ('delete', old.id, old.title, old.raw_transcript, old.summary_json);
         INSERT INTO notes_fts(rowid, title, raw_transcript, summary_json) 
         VALUES (new.id, new.title, new.raw_transcript, new.summary_json);
       END;
     ''');
+  }
+
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 3) {
+      await db.execute('DROP TABLE IF EXISTS notes_fts');
+      await db.execute('DROP TRIGGER IF EXISTS notes_ai');
+      await db.execute('DROP TRIGGER IF EXISTS notes_ad');
+      await db.execute('DROP TRIGGER IF EXISTS notes_au');
+      
+      await db.execute('''
+        CREATE VIRTUAL TABLE notes_fts USING fts4(
+          content='notes', 
+          title, 
+          raw_transcript, 
+          summary_json
+        )
+      ''');
+      
+      await db.execute('''
+        INSERT INTO notes_fts(rowid, title, raw_transcript, summary_json)
+        SELECT id, title, raw_transcript, summary_json FROM notes;
+      ''');
+
+      await db.execute('''
+        CREATE TRIGGER notes_ai AFTER INSERT ON notes BEGIN
+          INSERT INTO notes_fts(rowid, title, raw_transcript, summary_json) 
+          VALUES (new.id, new.title, new.raw_transcript, new.summary_json);
+        END;
+      ''');
+      
+      await db.execute('''
+        CREATE TRIGGER notes_ad BEFORE DELETE ON notes BEGIN
+          INSERT INTO notes_fts(notes_fts, rowid, title, raw_transcript, summary_json) 
+          VALUES ('delete', old.id, old.title, old.raw_transcript, old.summary_json);
+        END;
+      ''');
+      
+      await db.execute('''
+        CREATE TRIGGER notes_au BEFORE UPDATE ON notes BEGIN
+          INSERT INTO notes_fts(notes_fts, rowid, title, raw_transcript, summary_json) 
+          VALUES ('delete', old.id, old.title, old.raw_transcript, old.summary_json);
+          INSERT INTO notes_fts(rowid, title, raw_transcript, summary_json) 
+          VALUES (new.id, new.title, new.raw_transcript, new.summary_json);
+        END;
+      ''');
+    }
   }
 
   /// Insert a new note safely
@@ -91,17 +138,62 @@ class DatabaseService {
   Future<List<Map<String, dynamic>>> searchNotes(String query) async {
     try {
       final db = await database;
-      // Use MATCH for FTS5 queries, safely wrap the query
+      // Use MATCH for FTS4 queries, safely wrap the query
       final sanitizedQuery = query.replaceAll('"', '""');
       return await db.rawQuery('''
         SELECT notes.* FROM notes 
         JOIN notes_fts ON notes.id = notes_fts.rowid 
         WHERE notes_fts MATCH ? 
-        ORDER BY rank
+        ORDER BY notes.created_at DESC
       ''', ['"$sanitizedQuery"']);
     } catch (e) {
       debugPrint("Error loading search results: $e");
       return [];
+    }
+  }
+
+  /// Get all notes ordered by creation date
+  Future<List<Map<String, dynamic>>> getAllNotes() async {
+    try {
+      final db = await database;
+      return await db.query('notes', orderBy: 'created_at DESC');
+    } catch (e) {
+      debugPrint('Error getting notes: $e');
+      return [];
+    }
+  }
+
+  /// Delete a note by ID
+  Future<int> deleteNote(int id) async {
+    try {
+      final db = await database;
+      return await db.delete('notes', where: 'id = ?', whereArgs: [id]);
+    } catch (e) {
+      debugPrint('Error deleting note: $e');
+      return 0;
+    }
+  }
+
+  /// Update a note's fields
+  Future<int> updateNote(int id, Map<String, dynamic> values) async {
+    try {
+      final db = await database;
+      return await db.update('notes', values, where: 'id = ?', whereArgs: [id]);
+    } catch (e) {
+      debugPrint('Error updating note: $e');
+      return 0;
+    }
+  }
+
+  /// Delete all notes (clear all data)
+  Future<void> clearAllData() async {
+    try {
+      final db = await database;
+      await db.delete('notes');
+      // Rebuild FTS index
+      await db.execute("INSERT INTO notes_fts(notes_fts) VALUES('rebuild')");
+    } catch (e) {
+      debugPrint('Error clearing data: $e');
     }
   }
 }

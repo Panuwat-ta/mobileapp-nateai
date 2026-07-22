@@ -4,11 +4,11 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 import 'app/theme/app_theme.dart';
 import 'app/constants/app_constants.dart';
+import 'app/providers/theme_provider.dart';
 import 'features/record/screens/permission_screen.dart';
 import 'features/record/screens/overlay_screen.dart';
-import 'dart:io';
-import 'package:path_provider/path_provider.dart';
 import 'features/home/screens/main_screen.dart';
+
 @pragma("vm:entry-point")
 void overlayMain() {
   overlayMainImpl();
@@ -33,14 +33,17 @@ void main() {
   );
 }
 
-class LectureNoteApp extends StatelessWidget {
+class LectureNoteApp extends ConsumerWidget {
   const LectureNoteApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final themeMode = ref.watch(themeModeProvider);
     return MaterialApp(
       title: AppConstants.appName,
       theme: AppTheme.lightTheme,
+      darkTheme: AppTheme.darkTheme,
+      themeMode: themeMode,
       home: const AppStartup(), 
     );
   }
@@ -64,25 +67,32 @@ class _AppStartupState extends State<AppStartup> {
   }
 
   Future<void> _checkPermission() async {
-    final dir = await getApplicationDocumentsDirectory();
-    final file = File('${dir.path}/has_seen_permission.txt');
-    final hasSeen = await file.exists();
-
-    final status = await Permission.microphone.status;
-    final overlayStatus = await FlutterOverlayWindow.isPermissionGranted();
-    
-    setState(() {
-      _isPermissionGranted = (status.isGranted && overlayStatus) || hasSeen;
-      _isLoading = false;
-    });
+    try {
+      final status = await Permission.microphone.status;
+      final overlayStatus = await FlutterOverlayWindow.isPermissionGranted();
+      
+      if (mounted) {
+        setState(() {
+          _isPermissionGranted = status.isGranted && overlayStatus;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isPermissionGranted = false;
+          _isLoading = false;
+        });
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const Scaffold(
-        backgroundColor: Color(0xFFF8F9FA),
-        body: Center(child: CircularProgressIndicator(color: Color(0xFF03192E))),
+      return Scaffold(
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        body: const Center(child: CircularProgressIndicator(color: Color(0xFF03192E))),
       );
     }
     

@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:dio/dio.dart';
+import 'package:path_provider/path_provider.dart';
+import '../../../app/providers/theme_provider.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -9,8 +13,77 @@ class SettingsScreen extends ConsumerStatefulWidget {
 }
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
-  final bool _offlineMode = true;
-  String _selectedTheme = 'Light';
+  String? _modelPath;
+  bool _isDownloading = false;
+  double _downloadProgress = 0.0;
+  String _downloadStatus = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadModelPath();
+  }
+
+  Future<void> _loadModelPath() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _modelPath = prefs.getString('local_model_path');
+    });
+  }
+
+  Future<void> _downloadModel() async {
+    setState(() {
+      _isDownloading = true;
+      _downloadProgress = 0.0;
+      _downloadStatus = 'Starting download...';
+    });
+
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final filePath = '${dir.path}/Qwen3-1.7B-Q8_0.gguf';
+      
+      final url = 'https://huggingface.co/Qwen/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q8_0.gguf?download=true';
+      
+      final dio = Dio();
+      await dio.download(
+        url,
+        filePath,
+        onReceiveProgress: (received, total) {
+          if (total != -1) {
+            setState(() {
+              _downloadProgress = received / total;
+              _downloadStatus = '${(received / 1024 / 1024).toStringAsFixed(1)} MB / ${(total / 1024 / 1024).toStringAsFixed(1)} MB';
+            });
+          }
+        },
+      );
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('local_model_path', filePath);
+      
+      setState(() {
+        _modelPath = filePath;
+        _isDownloading = false;
+        _downloadStatus = 'Download complete!';
+      });
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Model downloaded successfully!')),
+        );
+      }
+    } catch (e) {
+      setState(() {
+        _isDownloading = false;
+        _downloadStatus = 'Download failed.';
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Download failed: $e')),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -20,7 +93,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         toolbarHeight: 48,
         backgroundColor: Theme.of(context).colorScheme.surface,
         elevation: 0,
-        scrolledUnderElevation: 0,
         title: Row(
           children: [
             ClipRRect(
@@ -32,11 +104,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
             ),
             const SizedBox(width: 10),
-            Text(
-              'Lecture Note AI',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                color: Theme.of(context).colorScheme.primary,
-                fontWeight: FontWeight.bold,
+            Expanded(
+              child: Text(
+                'Lecture Note AI',
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  color: Theme.of(context).colorScheme.primary,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
           ],
@@ -48,24 +123,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildSectionTitle('Model Manager'),
+            _buildSectionTitle(context, 'Model Manager'),
             const SizedBox(height: 12),
-            _buildModelManagerCard(),
+            _buildModelManagerCard(context),
             
             const SizedBox(height: 32),
             
-            _buildSectionTitle('Privacy & Data'),
+            _buildSectionTitle(context, 'Preferences'),
             const SizedBox(height: 12),
-            _buildPrivacyCard(),
-            
-            const SizedBox(height: 32),
-            
-            _buildSectionTitle('Preferences'),
-            const SizedBox(height: 12),
-            _buildPreferencesCard(),
+            _buildPreferencesCard(context),
             
             const SizedBox(height: 48),
-            _buildFooter(),
+            _buildFooter(context),
             const SizedBox(height: 48),
           ],
         ),
@@ -73,7 +142,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
-  Widget _buildSectionTitle(String title) {
+  Widget _buildSectionTitle(BuildContext context, String title) {
     return Padding(
       padding: const EdgeInsets.only(left: 4.0),
       child: Text(
@@ -86,7 +155,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
-  Widget _buildModelManagerCard() {
+  Widget _buildModelManagerCard(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface,
@@ -96,7 +165,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       padding: const EdgeInsets.all(16),
       child: Column(
         children: [
-          // Model Status
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -127,30 +195,30 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          FittedBox(
-                            fit: BoxFit.scaleDown,
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                              'Qwen3-1.7B',
-                              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                    color: Theme.of(context).colorScheme.onSurface,
-                                  ),
-                            ),
-                          ),
+                              FittedBox(
+                                fit: BoxFit.scaleDown,
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  'Local LLM Model (.gguf)',
+                                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                        color: Theme.of(context).colorScheme.onSurface,
+                                      ),
+                                ),
+                              ),
                           Row(
                             children: [
                               Container(
                                 width: 8,
                                 height: 8,
-                                decoration: const BoxDecoration(
-                                  color: Color(0xFF10B981),
+                                decoration: BoxDecoration(
+                                  color: _modelPath != null ? const Color(0xFF10B981) : Theme.of(context).colorScheme.error,
                                   shape: BoxShape.circle,
                                 ),
                               ),
                               const SizedBox(width: 6),
                               Expanded(
                                 child: Text(
-                                  'Loaded & Idle',
+                                  _modelPath != null ? 'Model Ready' : 'No Model Found',
                                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                         color: Theme.of(context).colorScheme.onSurfaceVariant,
                                       ),
@@ -165,214 +233,118 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     ],
                   ),
                 ),
-
+                if (_isDownloading)
+                  const SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                else if (_modelPath == null)
+                  FilledButton.tonal(
+                    onPressed: _downloadModel,
+                    child: const Text('Download'),
+                  ),
               ],
             ),
           ),
-          const SizedBox(height: 16),
-          // Stats Grid
-          Row(
-            children: [
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surface,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: const Color(0xFFDDE2E5)),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Memory Usage',
-                        style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                              color: Theme.of(context).colorScheme.onSurfaceVariant,
-                            ),
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.baseline,
-                        textBaseline: TextBaseline.alphabetic,
-                        children: [
-                          Text(
-                            '842',
-                            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                                  color: Theme.of(context).colorScheme.primary,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            'MB',
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      LinearProgressIndicator(
-                        value: 0.45,
-                        backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
-                        color: const Color(0xFF2A4D69),
-                        borderRadius: BorderRadius.circular(4),
-                        minHeight: 6,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surface,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: const Color(0xFFDDE2E5)),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Inference Speed',
-                        style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                              color: Theme.of(context).colorScheme.onSurfaceVariant,
-                            ),
-                      ),
-                      const SizedBox(height: 8),
-                      FittedBox(
-                        fit: BoxFit.scaleDown,
-                        alignment: Alignment.centerLeft,
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.baseline,
-                          textBaseline: TextBaseline.alphabetic,
-                          children: [
-                            Text(
-                              '24.5',
-                              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                                    color: Theme.of(context).colorScheme.primary,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              'tokens/s',
-                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                  ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Icon(Icons.bolt, size: 16, color: Theme.of(context).colorScheme.onPrimaryContainer),
-                          const SizedBox(width: 4),
-                          Text(
-                            'Optimal',
-                            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                                  color: Theme.of(context).colorScheme.onPrimaryContainer,
-                                ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPrivacyCard() {
-    return Container(
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFDDE2E5)),
-      ),
-      child: Column(
-        children: [
-          // Offline Mode
-          ListTile(
-            contentPadding: const EdgeInsets.all(16),
-            leading: Container(
-              width: 40,
-              height: 40,
-              decoration: const BoxDecoration(
-                color: Color(0xFFE7F3EF), // success-muted
-                shape: BoxShape.circle,
-              ),
-              child: Icon(Icons.cloud_off, color: Theme.of(context).colorScheme.primary),
-            ),
-            title: Text(
-              'Offline Mode',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurface,
-                  ),
-            ),
-            subtitle: Text(
-              'Process everything locally. Always on.',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-            ),
-            trailing: Switch(
-              value: _offlineMode,
-              onChanged: null, // Disabled as per design
-              activeThumbColor: Theme.of(context).colorScheme.primary,
-            ),
-          ),
-          const Divider(height: 1, color: Color(0xFFDDE2E5)),
-          // Clear Data
-          ListTile(
-            contentPadding: const EdgeInsets.all(16),
-            leading: Container(
-              width: 40,
-              height: 40,
+          if (_isDownloading) ...[
+            const SizedBox(height: 16),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                shape: BoxShape.circle,
+                color: Theme.of(context).colorScheme.surface,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFFDDE2E5)),
               ),
-              child: Icon(Icons.delete_sweep, color: Theme.of(context).colorScheme.onSurfaceVariant),
-            ),
-            title: Text(
-              'Clear Application Data',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurface,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Downloading Model...',
+                        style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            ),
+                      ),
+                      Text(
+                        '${(_downloadProgress * 100).toStringAsFixed(1)}%',
+                        style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                              color: Theme.of(context).colorScheme.primary,
+                              fontWeight: FontWeight.bold,
+                            ),
+                      ),
+                    ],
                   ),
-            ),
-            subtitle: Text(
-              'Remove all cached files and generated notes',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  const SizedBox(height: 8),
+                  LinearProgressIndicator(
+                    value: _downloadProgress,
+                    backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                    color: Theme.of(context).colorScheme.primary,
                   ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _downloadStatus,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                  ),
+                ],
+              ),
             ),
-            trailing: Icon(Icons.chevron_right, color: Theme.of(context).colorScheme.onSurfaceVariant),
-            onTap: () {},
-          ),
+          ] else if (_modelPath != null) ...[
+            const SizedBox(height: 16),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFFDDE2E5)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Current Model Path',
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _modelPath!,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurface,
+                        ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
   }
 
-  Widget _buildPreferencesCard() {
-    return Container(
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
+
+
+  Widget _buildPreferencesCard(BuildContext context) {
+    final themeMode = ref.watch(themeModeProvider);
+    final isDark = themeMode == ThemeMode.dark;
+
+    return Material(
+      color: Theme.of(context).colorScheme.surface,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFDDE2E5)),
+        side: const BorderSide(color: Color(0xFFDDE2E5)),
       ),
+      clipBehavior: Clip.antiAlias,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Theme Selection
           Padding(
             padding: const EdgeInsets.all(16.0),
             child: Column(
@@ -389,13 +361,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   children: [
                     Expanded(
                       child: GestureDetector(
-                        onTap: () => setState(() => _selectedTheme = 'Light'),
+                        onTap: () => ref.read(themeModeProvider.notifier).setTheme(ThemeMode.light),
                         child: Container(
                           padding: const EdgeInsets.all(8),
                           decoration: BoxDecoration(
                             border: Border.all(
-                              color: _selectedTheme == 'Light' ? Theme.of(context).colorScheme.primary : const Color(0xFFDDE2E5),
-                              width: _selectedTheme == 'Light' ? 2 : 1,
+                              color: !isDark ? Theme.of(context).colorScheme.primary : const Color(0xFFDDE2E5),
+                              width: !isDark ? 2 : 1,
                             ),
                             borderRadius: BorderRadius.circular(16),
                           ),
@@ -429,7 +401,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                                   ),
                                 ],
                               ),
-                              if (_selectedTheme == 'Light')
+                              if (!isDark)
                                 Positioned(
                                   top: 4,
                                   right: 4,
@@ -449,39 +421,59 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     ),
                     const SizedBox(width: 12),
                     Expanded(
-                      child: Opacity(
-                        opacity: 0.5,
+                      child: GestureDetector(
+                        onTap: () => ref.read(themeModeProvider.notifier).setTheme(ThemeMode.dark),
                         child: Container(
                           padding: const EdgeInsets.all(8),
                           decoration: BoxDecoration(
-                            border: Border.all(color: const Color(0xFFDDE2E5)),
+                            border: Border.all(
+                              color: isDark ? Theme.of(context).colorScheme.primary : const Color(0xFFDDE2E5),
+                              width: isDark ? 2 : 1,
+                            ),
                             borderRadius: BorderRadius.circular(16),
                           ),
-                          child: Column(
+                          child: Stack(
                             children: [
-                              Container(
-                                height: 64,
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFF191C1D),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                padding: const EdgeInsets.all(8),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Container(height: 8, width: 60, color: const Color(0xFF2E3132)),
-                                    const SizedBox(height: 4),
-                                    Container(height: 8, width: 40, color: const Color(0xFF2E3132)),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'Dark',
-                                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                              Column(
+                                children: [
+                                  Container(
+                                    height: 64,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF191C1D),
+                                      borderRadius: BorderRadius.circular(8),
                                     ),
+                                    padding: const EdgeInsets.all(8),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Container(height: 8, width: 60, color: const Color(0xFF2E3132)),
+                                        const SizedBox(height: 4),
+                                        Container(height: 8, width: 40, color: const Color(0xFF2E3132)),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Dark',
+                                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                                          color: isDark ? Theme.of(context).colorScheme.primary : Theme.of(context).colorScheme.onSurfaceVariant,
+                                        ),
+                                  ),
+                                ],
                               ),
+                              if (isDark)
+                                Positioned(
+                                  top: 4,
+                                  right: 4,
+                                  child: Container(
+                                    padding: const EdgeInsets.all(2),
+                                    decoration: BoxDecoration(
+                                      color: Theme.of(context).colorScheme.primary,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(Icons.check, size: 12, color: Colors.white),
+                                  ),
+                                ),
                             ],
                           ),
                         ),
@@ -493,7 +485,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
           ),
           const Divider(height: 1, color: Color(0xFFDDE2E5)),
-          // Language
           ListTile(
             contentPadding: const EdgeInsets.all(16),
             leading: Container(
@@ -531,7 +522,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
-  Widget _buildFooter() {
+  Widget _buildFooter(BuildContext context) {
     return Column(
       children: [
         Text(
@@ -543,7 +534,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         ),
         const SizedBox(height: 4),
         Text(
-          'Version 1.0.4 (Build 492)',
+          'Version 1.0.0+1',
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: Theme.of(context).colorScheme.outline,
               ),

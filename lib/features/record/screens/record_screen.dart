@@ -10,6 +10,27 @@ class RecordScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final recordState = ref.watch(recordStateProvider);
     final notifier = ref.read(recordStateProvider.notifier);
+    final recordingTime = ref.watch(recordingTimeProvider);
+
+    ref.listen<RecordState>(recordStateProvider, (previous, next) {
+      if (next is ErrorState) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(next.message),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ),
+        );
+      } else if (next is Completed) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Note saved successfully! ✓'),
+            backgroundColor: const Color(0xFF10B981),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        );
+      }
+    });
 
     final isRecording = recordState is Recording;
     final isProcessing = recordState is Transcribing || recordState is AiProcessing || recordState is Saving;
@@ -32,16 +53,27 @@ class RecordScreen extends ConsumerWidget {
               ),
             ),
             const SizedBox(width: 10),
-            Text(
-              'Lecture Note AI',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                color: Theme.of(context).colorScheme.primary,
-                fontWeight: FontWeight.bold,
+            Expanded(
+              child: Text(
+                'Lecture Note AI',
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  color: Theme.of(context).colorScheme.primary,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
           ],
         ),
         centerTitle: false,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.keyboard_alt_outlined),
+            onPressed: isProcessing ? null : () => _showManualInputDialog(context, ref),
+            tooltip: 'Manual Input (Typing)',
+          ),
+          const SizedBox(width: 8),
+        ],
       ),
       body: Stack(
         children: [
@@ -67,7 +99,7 @@ class RecordScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                '00:00:00', // TODO: Timer Provider
+                _formatTime(recordingTime),
                 style: TextStyle(
                   fontFamily: 'monospace',
                   fontSize: 48,
@@ -165,6 +197,16 @@ class RecordScreen extends ConsumerWidget {
     );
   }
 
+  String _formatTime(int seconds) {
+    int h = seconds ~/ 3600;
+    int m = (seconds % 3600) ~/ 60;
+    int s = seconds % 60;
+    if (h > 0) {
+      return '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+    }
+    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+  }
+
   Widget _buildTranscriptArea(BuildContext context, RecordState state) {
     String text = '';
     if (state is Recording) {
@@ -232,11 +274,28 @@ class RecordScreen extends ConsumerWidget {
       return;
     }
 
+    final titleController = TextEditingController();
+
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Save Note'),
-        content: const Text('Do you want to save this text and let AI summarize it?'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Do you want to save this text and let AI summarize it?'),
+            const SizedBox(height: 16),
+            TextField(
+              controller: titleController,
+              decoration: const InputDecoration(
+                labelText: 'Note Name (Optional)',
+                hintText: 'Enter a name or let AI generate one',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
@@ -244,10 +303,44 @@ class RecordScreen extends ConsumerWidget {
           ),
           FilledButton(
             onPressed: () {
-              ref.read(recordStateProvider.notifier).saveAndProcess();
+              final customTitle = titleController.text.trim();
+              ref.read(recordStateProvider.notifier).saveAndProcess(customTitle.isNotEmpty ? customTitle : null);
               Navigator.of(ctx).pop();
             },
             child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+  void _showManualInputDialog(BuildContext context, WidgetRef ref) {
+    final textController = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Manual Input'),
+        content: TextField(
+          controller: textController,
+          maxLines: 5,
+          decoration: const InputDecoration(
+            hintText: 'Type your note here to bypass speech recognition...',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final text = textController.text.trim();
+              if (text.isNotEmpty) {
+                ref.read(recordStateProvider.notifier).setManualTranscript(text);
+              }
+              Navigator.of(ctx).pop();
+            },
+            child: const Text('Set Transcript'),
           ),
         ],
       ),

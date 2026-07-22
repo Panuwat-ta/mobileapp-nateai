@@ -22,7 +22,8 @@ final notesSearchProvider = FutureProvider.family<List<Note>, String>((ref, quer
   return results.map((map) => Note.fromMap(map)).toList();
 });
 
-class SearchQueryNotifier extends Notifier<String> {
+/// Library-specific search query (renamed to avoid collision with search_provider.dart)
+class LibrarySearchQueryNotifier extends Notifier<String> {
   @override
   String build() => '';
 
@@ -31,6 +32,6 @@ class SearchQueryNotifier extends Notifier<String> {
   }
 }
 
-final searchQueryProvider = NotifierProvider<SearchQueryNotifier, String>(() {
-  return SearchQueryNotifier();
+final librarySearchQueryProvider = NotifierProvider<LibrarySearchQueryNotifier, String>(() {
+  return LibrarySearchQueryNotifier();
 });
