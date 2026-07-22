@@ -29,7 +29,7 @@ class TaskCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: bgColor,
         borderRadius: BorderRadius.circular(AppConstants.radiusCard),
-        border: Border.all(color: iconColor.withOpacity(0.2)), // Prefer borders over shadows
+        border: Border.all(color: iconColor.withValues(alpha: 0.2)), // Prefer borders over shadows
       ),
       padding: const EdgeInsets.all(AppConstants.space16),
       child: Row(
@@ -60,7 +60,7 @@ class TaskCard extends StatelessWidget {
                   '${date.day}/${date.month}/${date.year}',
                   style: TextStyle(
                     fontSize: 14,
-                    color: iconColor.withOpacity(0.8),
+                    color: iconColor.withValues(alpha: 0.8),
                     fontWeight: FontWeight.w500,
                   ),
                 ),

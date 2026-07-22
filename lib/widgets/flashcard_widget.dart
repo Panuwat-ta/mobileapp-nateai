@@ -37,7 +37,7 @@ class _FlashcardWidgetState extends State<FlashcardWidget> {
           borderRadius: BorderRadius.circular(AppConstants.radiusCard),
           border: Border.all(
             color: _isFlipped 
-                ? Theme.of(context).colorScheme.primary.withOpacity(0.3) 
+                ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.3) 
                 : const Color(0xFFDDE2E5),
           ),
         ),
@@ -50,7 +50,7 @@ class _FlashcardWidgetState extends State<FlashcardWidget> {
                 _isFlipped ? 'เฉลย' : 'คำถาม',
                 style: Theme.of(context).textTheme.labelMedium?.copyWith(
                   color: _isFlipped 
-                      ? Theme.of(context).colorScheme.onPrimaryContainer.withOpacity(0.7) 
+                      ? Theme.of(context).colorScheme.onPrimaryContainer.withValues(alpha: 0.7) 
                       : Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
               ),

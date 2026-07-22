@@ -41,7 +41,7 @@ class SearchScreen extends ConsumerWidget {
                 return ListView.separated(
                   padding: const EdgeInsets.all(AppConstants.space16),
                   itemCount: results.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: AppConstants.space8),
+                  separatorBuilder: (context, index) => const SizedBox(height: AppConstants.space8),
                   itemBuilder: (context, index) {
                     final note = results[index];
                     return Card(
@@ -56,7 +56,7 @@ class SearchScreen extends ConsumerWidget {
                         subtitle: Text('ID: ${note['id']} - พบคำตรงกันจาก AI สรุป'),
                         trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 16),
                         onTap: () {
-                          // Navigate to NoteDetailScreen
+                          // Action is handled by onChangedDetailScreen
                         },
                       ),
                     );

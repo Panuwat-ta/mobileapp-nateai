@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../providers/tasks_provider.dart';
 
 class TasksScreen extends ConsumerWidget {
+
   const TasksScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final tasksAsyncValue = ref.watch(tasksProvider);
+
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(
@@ -77,75 +81,49 @@ class TasksScreen extends ConsumerWidget {
               ),
             ),
           ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0),
-              child: Column(
-                children: [
-                  const SizedBox(height: 24),
-                  _buildSectionBadge(context, 'Upcoming Deadlines', Icons.schedule, const Color(0xFFFFF4E5)),
-                  const SizedBox(height: 24),
-                  _TaskCard(
-                    title: 'Submit Lab Report 4',
-                    subtitle: 'Organic Chemistry 301',
-                    description: 'Synthesize findings from the esterification practical. Ensure structural diagrams are included.',
-                    timeInfo: 'In 2 Days',
-                    dateInfo: 'Nov 15, 11:59 PM',
-                    icon: Icons.science,
-                    iconColor: Theme.of(context).colorScheme.error,
-                    isCompleted: false,
+          tasksAsyncValue.when(
+            data: (tasks) {
+              if (tasks.isEmpty) {
+                return SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 24.0),
+                    child: Center(
+                      child: Text('No tasks found.', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                    ),
                   ),
-                  const SizedBox(height: 16),
-                  _TaskCard(
-                    title: 'Midterm Essay Draft',
-                    subtitle: 'World History 102',
-                    description: 'Complete the 5-page draft covering the industrial revolution\'s socio-economic impacts.',
-                    timeInfo: 'In 5 Days',
-                    dateInfo: 'Nov 18, 9:00 AM',
-                    icon: Icons.menu_book,
-                    iconColor: Theme.of(context).colorScheme.secondary,
-                    isCompleted: false,
+                );
+              }
+              
+              return SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                      final task = tasks[index];
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 16.0),
+                        child: _TaskCard(
+                          title: task.title,
+                          subtitle: task.noteTitle,
+                          description: task.subtitle,
+                          timeInfo: 'Upcoming',
+                          dateInfo: task.dateStr ?? 'No date',
+                          icon: task.title.toLowerCase().contains('exam') ? Icons.menu_book : Icons.event,
+                          iconColor: Theme.of(context).colorScheme.secondary,
+                          isCompleted: false,
+                        ),
+                      );
+                    },
+                    childCount: tasks.length,
                   ),
-                  const SizedBox(height: 48),
-                  _buildSectionBadge(context, 'Completed', Icons.check_circle, const Color(0xFFE7F3EF)),
-                  const SizedBox(height: 24),
-                  _TaskCard(
-                    title: 'Problem Set 5',
-                    subtitle: 'Calculus II',
-                    description: 'Integration by parts and partial fractions exercises.',
-                    timeInfo: 'Completed',
-                    dateInfo: 'Yesterday',
-                    icon: Icons.functions,
-                    iconColor: Theme.of(context).colorScheme.outline,
-                    isCompleted: true,
-                  ),
-                  const SizedBox(height: 32),
-                ],
-              ),
+                ),
+              );
+            },
+            loading: () => const SliverToBoxAdapter(
+              child: Center(child: CircularProgressIndicator()),
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSectionBadge(BuildContext context, String text, IconData icon, Color bgColor) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFDDE2E5)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 16, color: Theme.of(context).colorScheme.onSurface),
-          const SizedBox(width: 8),
-          Text(
-            text,
-            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-              color: Theme.of(context).colorScheme.onSurface,
+            error: (err, stack) => SliverToBoxAdapter(
+              child: Center(child: Text('Error: $err')),
             ),
           ),
         ],

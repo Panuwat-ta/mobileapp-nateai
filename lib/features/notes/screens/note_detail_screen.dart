@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 import '../../../utils/pdf_export_helper.dart';
+import '../../../models/note.dart';
 
 class NoteDetailScreen extends ConsumerStatefulWidget {
-  const NoteDetailScreen({super.key});
+  final Note note;
+  const NoteDetailScreen({super.key, required this.note});
 
   @override
   ConsumerState<NoteDetailScreen> createState() => _NoteDetailScreenState();
@@ -14,6 +17,11 @@ class _NoteDetailScreenState extends ConsumerState<NoteDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final note = widget.note;
+    final parsedSummary = note.parsedSummary;
+    final summaryText = parsedSummary['summary'] ?? 'No summary available.';
+    final title = note.title.isEmpty ? 'Untitled Note' : note.title;
+
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(
@@ -50,11 +58,11 @@ class _NoteDetailScreenState extends ConsumerState<NoteDetailScreen> {
             icon: Icon(Icons.picture_as_pdf, color: Theme.of(context).colorScheme.primary),
             tooltip: 'Export to PDF',
             onPressed: () async {
-              String title = 'Intro to Neural Networks - Week 4';
+              String exportTitle = title;
               String content = _tabIndex == 0 
-                  ? 'This is the AI Summary text for the PDF export. (In a real app, you would pass the actual summary from the note object here.)' 
-                  : 'This is the Raw Transcript text for the PDF export. (In a real app, you would pass the actual transcript from the note object here.)';
-              await PdfExportHelper.exportTextToPdf(title, content);
+                  ? summaryText 
+                  : note.rawTranscript;
+              await PdfExportHelper.exportTextToPdf(exportTitle, content);
             },
           ),
           const SizedBox(width: 8),
@@ -67,7 +75,7 @@ class _NoteDetailScreenState extends ConsumerState<NoteDetailScreen> {
           children: [
             // Header Section
             Text(
-              'Intro to Neural Networks - Week 4',
+              title,
               style: Theme.of(context).textTheme.headlineLarge?.copyWith(
                 color: Theme.of(context).colorScheme.primary,
               ),
@@ -78,22 +86,7 @@ class _NoteDetailScreenState extends ConsumerState<NoteDetailScreen> {
                 Icon(Icons.calendar_today, size: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
                 const SizedBox(width: 8),
                 Text(
-                  'October 24, 2023',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                Container(
-                  width: 4,
-                  height: 4,
-                  margin: const EdgeInsets.symmetric(horizontal: 8),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.outlineVariant,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                Text(
-                  '45 min duration',
+                  DateFormat('MMMM d, yyyy').format(DateTime.fromMillisecondsSinceEpoch(note.createdAt)),
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
@@ -104,8 +97,8 @@ class _NoteDetailScreenState extends ConsumerState<NoteDetailScreen> {
 
             // Tab Switcher
             Container(
-              decoration: BoxDecoration(
-                border: Border(bottom: BorderSide(color: const Color(0xFFDDE2E5))),
+              decoration: const BoxDecoration(
+                border: Border(bottom: BorderSide(color: Color(0xFFDDE2E5))),
               ),
               child: Row(
                 children: [
@@ -118,7 +111,7 @@ class _NoteDetailScreenState extends ConsumerState<NoteDetailScreen> {
             const SizedBox(height: 24),
 
             // Bento Grid Content
-            if (_tabIndex == 0) _buildAISummary(context) else _buildRawTranscript(context),
+            if (_tabIndex == 0) _buildAISummary(context, note, summaryText, parsedSummary) else _buildRawTranscript(context, note),
           ],
         ),
       ),
@@ -157,7 +150,7 @@ class _NoteDetailScreenState extends ConsumerState<NoteDetailScreen> {
     );
   }
 
-  Widget _buildAISummary(BuildContext context) {
+  Widget _buildAISummary(BuildContext context, Note note, String summaryText, Map<String, dynamic> parsedSummary) {
     return Column(
       children: [
         // Immediate Summary Card
@@ -196,93 +189,110 @@ class _NoteDetailScreenState extends ConsumerState<NoteDetailScreen> {
               ),
               const SizedBox(height: 16),
               Text(
-                'The lecture introduced the foundational concepts of Artificial Neural Networks (ANNs), focusing on the structure of the perceptron, activation functions, and the forward propagation process.',
+                summaryText,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: Theme.of(context).colorScheme.onSurface,
                 ),
               ),
-              const SizedBox(height: 16),
-              _buildBulletList([
-                'The Perceptron: The basic unit modeled after biological neurons, taking multiple inputs, applying weights, and adding a bias.',
-                'Activation Functions: Discussed the need for non-linearity. Key examples covered were Sigmoid, ReLU, and Tanh. ReLU was emphasized for modern deep learning.',
-                'Forward Propagation: The process of calculating the output of a neural network by passing data through layers.',
-              ]),
             ],
           ),
         ),
         const SizedBox(height: 16),
 
         // Key Terms
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surfaceContainerLowest,
-            border: Border.all(color: const Color(0xFFDDE2E5)),
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'KEY TERMS',
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.secondary,
-                  letterSpacing: 1.5,
+        if (parsedSummary['keywords'] != null) ...[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceContainerLowest,
+              border: Border.all(color: const Color(0xFFDDE2E5)),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'KEY TERMS',
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.secondary,
+                    letterSpacing: 1.5,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  'Perceptron', 'Activation Function', 'ReLU', 'Sigmoid', 'Forward Prop', 'Weights', 'Bias'
-                ].map((term) => _buildTermChip(term)).toList(),
-              ),
-            ],
+                const SizedBox(height: 16),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: (parsedSummary['keywords'] as String).split(',').map((term) => _buildTermChip(term.trim())).toList(),
+                ),
+              ],
+            ),
           ),
-        ),
-        const SizedBox(height: 16),
+          const SizedBox(height: 16),
+        ],
 
         // Tasks & Deadlines
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: const Color(0xFFFFF4E5), // warning-muted
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(Icons.assignment, color: Theme.of(context).colorScheme.errorContainer.withValues(alpha: 0.8)),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Tasks & Deadlines',
-                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                      color: const Color(0xFF93000a), // on-error-container
-                      fontSize: 20,
+        if (parsedSummary['homework'] != null || parsedSummary['exam'] != null) ...[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF4E5), // warning-muted
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.assignment, color: Theme.of(context).colorScheme.errorContainer.withValues(alpha: 0.8)),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Tasks & Deadlines',
+                      style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                        color: const Color(0xFF93000a), // on-error-container
+                        fontSize: 20,
+                      ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              _buildTaskItem('Complete Problem Set 3', 'Due Oct 30', Icons.event, true),
-              const SizedBox(height: 12),
-              _buildTaskItem('Read Chapter 5 (Goodfellow)', 'Optional prep for next week', Icons.menu_book, false),
-            ],
+                  ],
+                ),
+                const SizedBox(height: 16),
+                if (parsedSummary['homework'] != null)
+                  _buildTaskSection(parsedSummary['homework'], Icons.event, true),
+                if (parsedSummary['exam'] != null)
+                  _buildTaskSection(parsedSummary['exam'], Icons.menu_book, false),
+              ],
+            ),
           ),
-        ),
-        const SizedBox(height: 80),
+          const SizedBox(height: 80),
+        ],
       ],
     );
   }
+  
+  Widget _buildTaskSection(dynamic taskData, IconData icon, bool isWarning) {
+    if (taskData is List) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: taskData.map((item) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 12.0),
+            child: _buildTaskItem(item['title'] ?? 'Task', item['description'] ?? '', icon, isWarning),
+          );
+        }).toList(),
+      );
+    } else if (taskData is String) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 12.0),
+        child: _buildTaskItem('Task', taskData, icon, isWarning),
+      );
+    }
+    return const SizedBox();
+  }
 
-  Widget _buildRawTranscript(BuildContext context) {
+  Widget _buildRawTranscript(BuildContext context, Note note) {
     return Text(
-      'Raw transcript content will be displayed here...',
+      note.rawTranscript,
       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
         color: Theme.of(context).colorScheme.onSurfaceVariant,
       ),
@@ -303,31 +313,6 @@ class _NoteDetailScreenState extends ConsumerState<NoteDetailScreen> {
           color: Theme.of(context).colorScheme.primary,
         ),
       ),
-    );
-  }
-
-  Widget _buildBulletList(List<String> items) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: items.map((item) {
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 8.0),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('• ', style: TextStyle(fontSize: 16)),
-              Expanded(
-                child: Text(
-                  item,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      }).toList(),
     );
   }
 
@@ -355,18 +340,21 @@ class _NoteDetailScreenState extends ConsumerState<NoteDetailScreen> {
                   color: Theme.of(context).colorScheme.onSurface,
                 ),
               ),
-              Row(
-                children: [
-                  Icon(icon, size: 14, color: isWarning ? Theme.of(context).colorScheme.error : Theme.of(context).colorScheme.onSurfaceVariant),
-                  const SizedBox(width: 4),
-                  Text(
-                    subtitle,
-                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      color: isWarning ? Theme.of(context).colorScheme.error : Theme.of(context).colorScheme.onSurfaceVariant,
+              if (subtitle.isNotEmpty)
+                Row(
+                  children: [
+                    Icon(icon, size: 14, color: isWarning ? Theme.of(context).colorScheme.error : Theme.of(context).colorScheme.onSurfaceVariant),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        subtitle,
+                        style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                          color: isWarning ? Theme.of(context).colorScheme.error : Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
                     ),
-                  ),
-                ],
-              ),
+                  ],
+                ),
             ],
           ),
         ),

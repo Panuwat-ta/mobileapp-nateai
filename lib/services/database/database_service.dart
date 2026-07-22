@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:path/path.dart';
+import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -49,7 +50,58 @@ class DatabaseService {
         content_rowid='id'
       )
     ''');
+
+    // 3. Create Triggers to auto-sync notes_fts when notes table changes
+    await db.execute('''
+      CREATE TRIGGER notes_ai AFTER INSERT ON notes BEGIN
+        INSERT INTO notes_fts(rowid, title, raw_transcript, summary_json) 
+        VALUES (new.id, new.title, new.raw_transcript, new.summary_json);
+      END;
+    ''');
+    
+    await db.execute('''
+      CREATE TRIGGER notes_ad AFTER DELETE ON notes BEGIN
+        INSERT INTO notes_fts(notes_fts, rowid, title, raw_transcript, summary_json) 
+        VALUES ('delete', old.id, old.title, old.raw_transcript, old.summary_json);
+      END;
+    ''');
+    
+    await db.execute('''
+      CREATE TRIGGER notes_au AFTER UPDATE ON notes BEGIN
+        INSERT INTO notes_fts(notes_fts, rowid, title, raw_transcript, summary_json) 
+        VALUES ('delete', old.id, old.title, old.raw_transcript, old.summary_json);
+        INSERT INTO notes_fts(rowid, title, raw_transcript, summary_json) 
+        VALUES (new.id, new.title, new.raw_transcript, new.summary_json);
+      END;
+    ''');
   }
 
-  // Note: We will add triggers or methods to keep FTS in sync during Insert/Update
+  /// Insert a new note safely
+  Future<int> insertNote(Map<String, dynamic> note) async {
+    try {
+      final db = await database;
+      return await db.insert('notes', note, conflictAlgorithm: ConflictAlgorithm.replace);
+    } catch (e) {
+      debugPrint('Database Insert Error: $e');
+      return -1;
+    }
+  }
+
+  /// Perform Full-Text Search in < 100ms
+  Future<List<Map<String, dynamic>>> searchNotes(String query) async {
+    try {
+      final db = await database;
+      // Use MATCH for FTS5 queries, safely wrap the query
+      final sanitizedQuery = query.replaceAll('"', '""');
+      return await db.rawQuery('''
+        SELECT notes.* FROM notes 
+        JOIN notes_fts ON notes.id = notes_fts.rowid 
+        WHERE notes_fts MATCH ? 
+        ORDER BY rank
+      ''', ['"$sanitizedQuery"']);
+    } catch (e) {
+      debugPrint("Error loading search results: $e");
+      return [];
+    }
+  }
 }

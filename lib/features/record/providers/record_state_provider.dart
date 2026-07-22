@@ -5,6 +5,7 @@ import '../../../services/stt/stt_service.dart';
 import '../../../services/llama/ai_pipeline_manager.dart';
 import '../../../services/database/database_service.dart';
 import '../../../utils/result.dart';
+import '../../notes/providers/notes_provider.dart';
 
 class RecordNotifier extends Notifier<RecordState> {
   String _currentTranscript = '';
@@ -82,22 +83,18 @@ class RecordNotifier extends Notifier<RecordState> {
       state = const Saving();
       
       final dbService = ref.read(databaseProvider);
-      final db = await dbService.database;
-      int noteId = await db.insert('notes', {
+      
+      int noteId = await dbService.insertNote({
         'title': 'New Note',
         'raw_transcript': _currentTranscript,
         'summary_json': result.data,
         'created_at': DateTime.now().millisecondsSinceEpoch,
       });
       
-      await db.insert('notes_fts', {
-        'rowid': noteId,
-        'title': 'New Note',
-        'raw_transcript': _currentTranscript,
-        'summary_json': result.data,
-      });
-
-      pipeline.executePass2(_currentTranscript, result.data, noteId);
+      if (noteId != -1) {
+        pipeline.executePass2(_currentTranscript, result.data, noteId);
+        ref.invalidate(notesProvider); // Refresh list
+      }
       
       state = const Completed();
       

@@ -9,7 +9,7 @@ class SettingsScreen extends ConsumerStatefulWidget {
 }
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
-  bool _offlineMode = true;
+  final bool _offlineMode = true;
   String _selectedTheme = 'Light';
 
   @override
@@ -326,7 +326,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             trailing: Switch(
               value: _offlineMode,
               onChanged: null, // Disabled as per design
-              activeColor: Theme.of(context).colorScheme.primary,
+              activeThumbColor: Theme.of(context).colorScheme.primary,
             ),
           ),
           const Divider(height: 1, color: Color(0xFFDDE2E5)),

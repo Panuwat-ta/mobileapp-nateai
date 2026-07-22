@@ -31,7 +31,7 @@ class STTService {
         onResult: (result) {
           onResult(result.recognizedWords);
         },
-        partialResults: true,
+        listenOptions: SpeechListenOptions(partialResults: true),
       );
       return const Success(null);
     } catch (e, st) {
