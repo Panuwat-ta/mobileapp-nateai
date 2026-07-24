@@ -44,3 +44,4 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 Qwen3-1.7B-Q8_0.gguf
+.agent
