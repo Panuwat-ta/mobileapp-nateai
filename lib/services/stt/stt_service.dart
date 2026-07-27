@@ -75,6 +75,8 @@ class STTService {
         if (text.isNotEmpty) {
           onResult(text);
         }
+      }, onError: (e) {
+        debugPrint("STT Error: $e");
       });
 
       _isListening = true;

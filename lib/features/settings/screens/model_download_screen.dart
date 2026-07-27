@@ -136,7 +136,7 @@ class _ModelDownloadScreenState extends ConsumerState<ModelDownloadScreen> {
       await _downloadModel(ModelType.whisper, 'Downloading STT Model (142MB)...');
     }
     
-    if (mounted) {
+    if (mounted && !_needsQwen && !_needsWhisper) {
       _goToMain();
     }
   }
