@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'package:path/path.dart';
 import 'package:flutter/foundation.dart';
-import 'package:sqflite/sqflite.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -20,6 +20,10 @@ class DatabaseService {
   }
 
   Future<Database> _initDatabase() async {
+    // Initialize FFI
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
+
     Directory documentsDirectory = await getApplicationDocumentsDirectory();
     String path = join(documentsDirectory.path, 'noteai.db');
     return await openDatabase(
@@ -42,9 +46,9 @@ class DatabaseService {
       )
     ''');
 
-    // 2. Create FTS4 virtual table for fast full-text search
+    // 2. Create FTS5 virtual table for fast full-text search
     await db.execute('''
-      CREATE VIRTUAL TABLE notes_fts USING fts4(
+      CREATE VIRTUAL TABLE notes_fts USING fts5(
         content='notes', 
         title, 
         raw_transcript, 
@@ -85,7 +89,7 @@ class DatabaseService {
       await db.execute('DROP TRIGGER IF EXISTS notes_au');
       
       await db.execute('''
-        CREATE VIRTUAL TABLE notes_fts USING fts4(
+        CREATE VIRTUAL TABLE notes_fts USING fts5(
           content='notes', 
           title, 
           raw_transcript, 
@@ -138,7 +142,7 @@ class DatabaseService {
   Future<List<Map<String, dynamic>>> searchNotes(String query) async {
     try {
       final db = await database;
-      // Use MATCH for FTS4 queries, safely wrap the query
+      // Use MATCH for FTS5 queries, safely wrap the query
       final sanitizedQuery = query.replaceAll('"', '""');
       return await db.rawQuery('''
         SELECT notes.* FROM notes 

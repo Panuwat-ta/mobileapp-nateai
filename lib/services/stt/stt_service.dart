@@ -1,58 +1,83 @@
+import 'dart:async';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:speech_to_text/speech_to_text.dart';
+import 'package:whisper_ggml/whisper_ggml.dart';
+import 'package:record/record.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../utils/result.dart';
+import '../ai/model_download_service.dart';
 
 final sttServiceProvider = Provider<STTService>((ref) {
-  return STTService();
+  final downloadService = ref.watch(modelDownloadServiceProvider);
+  return STTService(downloadService);
 });
 
 class STTService {
-  final SpeechToText _speechToText = SpeechToText();
-  bool _isInitialized = false;
+  final ModelDownloadService _downloadService;
+  STTService(this._downloadService);
 
-  bool get isListening => _speechToText.isListening;
+  final WhisperController _whisperController = WhisperController();
+  final AudioRecorder _recorder = AudioRecorder();
+  
+  WhisperLiveSession? _liveSession;
+  StreamSubscription? _partialSubscription;
+
+  bool _isListening = false;
+  bool get isListening => _isListening;
 
   Future<Result<bool>> initialize() async {
     try {
-      if (!_isInitialized) {
-        // initialize STT
-        _isInitialized = await _speechToText.initialize(
-          onError: (val) => debugPrint('STT Error: ${val.errorMsg}'),
-          onStatus: (val) => debugPrint('STT Status: $val'),
-        );
+      final modelPath = await _downloadService.getDownloadedModelPath(ModelType.whisper);
+      if (modelPath == null) {
+        return const Failure('Whisper STT Model not found. Please download it first.');
       }
-      if (!_isInitialized) {
-        return const Failure('Speech recognition not available or permission denied');
+      final hasPermission = await _recorder.hasPermission();
+      if (!hasPermission) {
+        return const Failure('Microphone permission is required.');
       }
-
-      var locales = await _speechToText.locales();
-      debugPrint('Available locales: ${locales.map((l) => l.localeId).toList()}');
-      
-      return Success(_isInitialized);
+      return const Success(true);
     } catch (e, st) {
+      debugPrint('STT Init Error: $e');
       return Failure('Failed to initialize STT Engine', e, st);
     }
   }
 
   Future<Result<void>> startListening(Function(String) onResult) async {
     try {
-      if (!_isInitialized) {
-        final initResult = await initialize();
-        if (initResult is Failure) return Failure((initResult as Failure).message);
+      if (_isListening) return const Success(null);
+
+      final modelPath = await _downloadService.getDownloadedModelPath(ModelType.whisper);
+      if (modelPath == null) {
+        return const Failure('Whisper STT Model not found. Please download it first.');
       }
-      await _speechToText.listen(
-        onResult: (result) {
-          onResult(result.recognizedWords);
-        },
-        listenOptions: SpeechListenOptions(
-          partialResults: true,
-          localeId: 'th_TH',
-          listenFor: const Duration(minutes: 60),
-          pauseFor: const Duration(seconds: 10),
-          listenMode: ListenMode.dictation,
-        ),
+
+      final pcmStream = await _recorder.startStream(const RecordConfig(
+        encoder: AudioEncoder.pcm16bits,
+        sampleRate: 16000,
+        numChannels: 1,
+      ));
+
+      // whisper_ggml requires the model to be in getApplicationSupportDirectory
+      // We must ensure the model is copied there if it's currently in Documents
+      final targetPath = await WhisperController().getPath(WhisperModel.base);
+      if (!File(targetPath).existsSync() && File(modelPath).existsSync()) {
+        await File(modelPath).copy(targetPath);
+      }
+
+      _liveSession = await _whisperController.transcribeLive(
+        model: WhisperModel.base,
+        pcm16Stream: pcmStream,
+        lang: 'th',
+        suppressNonSpeechTokens: true,
       );
+
+      _partialSubscription = _liveSession?.partials.listen((text) {
+        if (text.isNotEmpty) {
+          onResult(text);
+        }
+      });
+
+      _isListening = true;
       return const Success(null);
     } catch (e, st) {
       return Failure('Failed to start listening', e, st);
@@ -61,10 +86,27 @@ class STTService {
   
   Future<Result<void>> stopListening() async {
     try {
-      await _speechToText.stop();
+      if (!_isListening) return const Success(null);
+      _isListening = false;
+      
+      await _recorder.stop();
+      _partialSubscription?.cancel();
+      _partialSubscription = null;
+      
+      if (_liveSession != null) {
+        await _liveSession!.stop();
+        _liveSession = null;
+      }
+      
       return const Success(null);
     } catch (e, st) {
       return Failure('Failed to stop STT', e, st);
     }
+  }
+  
+  void dispose() {
+    _recorder.dispose();
+    _partialSubscription?.cancel();
+    _liveSession?.stop();
   }
 }

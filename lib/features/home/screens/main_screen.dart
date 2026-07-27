@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import '../../record/screens/record_screen.dart';
 import '../../notes/screens/library_screen.dart';
 import '../../notes/screens/tasks_screen.dart';
-import '../../notes/screens/flashcards_screen.dart';
 import '../../settings/screens/settings_screen.dart';
 
 class MainScreen extends StatefulWidget {
@@ -21,7 +20,6 @@ class _MainScreenState extends State<MainScreen> {
       const LibraryScreen(),
       const RecordScreen(),
       const TasksScreen(),
-      const FlashcardsScreen(),
       const SettingsScreen(),
     ];
 
@@ -62,11 +60,6 @@ class _MainScreenState extends State<MainScreen> {
               icon: Icon(Icons.event_note_outlined),
               selectedIcon: Icon(Icons.event_note, color: Theme.of(context).colorScheme.onPrimaryContainer),
               label: 'Tasks',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.quiz_outlined),
-              selectedIcon: Icon(Icons.quiz, color: Theme.of(context).colorScheme.onPrimaryContainer),
-              label: 'Flashcards',
             ),
             NavigationDestination(
               icon: Icon(Icons.settings_outlined),

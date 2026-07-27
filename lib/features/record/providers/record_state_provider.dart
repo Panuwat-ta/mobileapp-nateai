@@ -12,7 +12,6 @@ import '../../notes/providers/notes_provider.dart';
 class RecordNotifier extends Notifier<RecordState> {
   String _currentTranscript = '';
   Timer? _timer;
-  Timer? _sttCheckTimer;
 
   @override
   RecordState build() {
@@ -46,10 +45,15 @@ class RecordNotifier extends Notifier<RecordState> {
 
     final result = await stt.startListening((text) {
       if (text.isNotEmpty) {
+        // whisper_ggml provides the full transcript so far, not a delta.
         _currentTranscript = text;
         state = Recording(transcript: _currentTranscript);
         try {
-          FlutterOverlayWindow.shareData(_currentTranscript);
+          String caption = _currentTranscript;
+          if (caption.length > 150) {
+            caption = '...${caption.substring(caption.length - 150)}';
+          }
+          FlutterOverlayWindow.shareData(caption);
         } catch (_) {}
       }
     });
@@ -63,32 +67,10 @@ class RecordNotifier extends Notifier<RecordState> {
       });
       return;
     }
-
-    // Auto-restart STT if it stops due to pause timeout
-    _sttCheckTimer?.cancel();
-    _sttCheckTimer = Timer.periodic(const Duration(seconds: 2), (timer) async {
-      if (state is Recording && !stt.isListening) {
-        // STT stopped due to pause timeout, restart it
-        final accumulatedText = _currentTranscript;
-        await stt.startListening((text) {
-          if (text.isNotEmpty) {
-            // Append new text to accumulated transcript
-            _currentTranscript = accumulatedText.isEmpty
-                ? text
-                : '$accumulatedText $text';
-            state = Recording(transcript: _currentTranscript);
-            try {
-              FlutterOverlayWindow.shareData(_currentTranscript);
-            } catch (_) {}
-          }
-        });
-      }
-    });
   }
 
   void stopRecording() async {
     _timer?.cancel();
-    _sttCheckTimer?.cancel();
     final stt = ref.read(sttServiceProvider);
     await stt.stopListening();
     
@@ -190,7 +172,6 @@ class RecordNotifier extends Notifier<RecordState> {
 
   void reset() {
     _timer?.cancel();
-    _sttCheckTimer?.cancel();
     ref.read(recordingTimeProvider.notifier).reset();
     _currentTranscript = '';
     state = const Idle();

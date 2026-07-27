@@ -1,16 +1,12 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../../../utils/pdf_export_helper.dart';
-import '../../../utils/result.dart';
 import '../../../models/note.dart';
-import '../../../services/llama/ai_pipeline_manager.dart';
 import '../../../services/database/database_service.dart';
 import '../../../widgets/keyword_chip.dart';
 import '../../../widgets/summary_card.dart';
 import '../providers/notes_provider.dart';
-import '../../flashcards/screens/flashcard_screen.dart';
 import '../../../utils/format_helper.dart';
 
 class NoteDetailScreen extends ConsumerStatefulWidget {
@@ -102,15 +98,6 @@ class _NoteDetailScreenState extends ConsumerState<NoteDetailScreen> {
               await PdfExportHelper.exportTextToPdf(exportTitle, content);
             },
           ),
-          IconButton(
-            icon: Icon(Icons.quiz_outlined, color: Theme.of(context).colorScheme.primary),
-            tooltip: 'View Flashcards',
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => FlashcardScreen(noteId: note.id)),
-              );
-            },
-          ),
           const SizedBox(width: 8),
         ],
       ),
@@ -170,73 +157,6 @@ class _NoteDetailScreenState extends ConsumerState<NoteDetailScreen> {
               _buildFinalOutput(context, note),
           ],
         ),
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () async {
-          showDialog(
-            context: context,
-            barrierDismissible: false,
-            builder: (_) => const Center(child: CircularProgressIndicator()),
-          );
-          
-          try {
-            final pipeline = ref.read(aiPipelineProvider);
-            final result = await pipeline.executePass3(note.rawTranscript);
-            
-            if (result is Success<String> && context.mounted) {
-              Navigator.of(context).pop(); // Close loading
-              
-              try {
-                final parsed = jsonDecode(result.data);
-                final flashcards = parsed['flashcards'] as List?;
-                final count = flashcards?.length ?? 0;
-                
-                final existingSummary = note.parsedSummary;
-                existingSummary['flashcards'] = flashcards;
-                
-                final dbService = ref.read(databaseProvider);
-                await dbService.updateNote(note.id, {
-                  'summary_json': jsonEncode(existingSummary),
-                });
-                
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Generated $count flashcards! Check the Flashcards tab.'),
-                      behavior: SnackBarBehavior.floating,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                  );
-                  ref.invalidate(notesProvider);
-                }
-              } catch (_) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Flashcards generated! Check the Flashcards tab.')),
-                  );
-                }
-              }
-            } else {
-              if (context.mounted) {
-                Navigator.of(context).pop();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Failed to generate flashcards')),
-                );
-              }
-            }
-          } catch (e) {
-            if (context.mounted) {
-              Navigator.of(context).pop();
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Error: $e')),
-              );
-            }
-          }
-        },
-        backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-        foregroundColor: Theme.of(context).colorScheme.onPrimaryContainer,
-        icon: const Icon(Icons.quiz),
-        label: const Text('Generate Flashcards'),
       ),
     );
   }

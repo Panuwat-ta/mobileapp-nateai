@@ -38,39 +38,47 @@ class RecordScreen extends ConsumerWidget {
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(
-        toolbarHeight: 48,
+        toolbarHeight: 56,
         backgroundColor: Theme.of(context).colorScheme.surface,
         elevation: 0,
         scrolledUnderElevation: 0,
-        title: Row(
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Image.asset(
-                'assets/icon.png',
-                width: 28,
-                height: 28,
+            Text(
+              'AI Transcription',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.bold,
               ),
             ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                'Lecture Note AI',
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  color: Theme.of(context).colorScheme.primary,
-                  fontWeight: FontWeight.bold,
-                ),
+            if (isRecording)
+              Row(
+                children: [
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: const BoxDecoration(
+                      color: Colors.redAccent,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Listening to internal & external audio',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
               ),
-            ),
           ],
         ),
-        centerTitle: false,
         actions: [
           IconButton(
             icon: const Icon(Icons.keyboard_alt_outlined),
             onPressed: isProcessing ? null : () => _showManualInputDialog(context, ref),
-            tooltip: 'Manual Input (Typing)',
+            tooltip: 'Manual Input',
           ),
           const SizedBox(width: 8),
         ],
@@ -79,106 +87,106 @@ class RecordScreen extends ConsumerWidget {
         children: [
           Column(
             children: [
-              const SizedBox(height: 16),
-              
-              // Status & Timer
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  if (isRecording) ...[
-                    const Icon(Icons.radio_button_checked, color: Color(0xFF2A4D69), size: 16),
-                    const SizedBox(width: 8),
-                  ],
-                  Text(
-                    isProcessing ? 'PROCESSING' : (isRecording ? 'RECORDING' : 'READY'),
-                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      color: const Color(0xFF2A4D69),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Text(
-                _formatTime(recordingTime),
-                style: TextStyle(
-                  fontFamily: 'monospace',
-                  fontSize: 48,
-                  fontWeight: FontWeight.bold,
-                  color: Theme.of(context).colorScheme.primary,
-                  letterSpacing: -1,
-                ),
-              ),
-              
-              const SizedBox(height: 24),
-              
-              // Live Transcript Display
+              // Full Screen Transcript Area
               Expanded(
                 child: Container(
                   width: double.infinity,
-                  margin: const EdgeInsets.symmetric(horizontal: 24.0),
-                  padding: const EdgeInsets.all(24.0),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surface,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: const Color(0xFFDDE2E5)),
-                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
                   child: _buildTranscriptArea(context, recordState),
                 ),
               ),
               
-              const SizedBox(height: 32),
-              
-              // Controls
-              Padding(
-                padding: const EdgeInsets.only(bottom: 32.0, left: 24.0, right: 24.0),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              // Bottom Controls Area
+              Container(
+                padding: const EdgeInsets.only(top: 24, bottom: 48, left: 24, right: 24),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surface,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.05),
+                      blurRadius: 20,
+                      offset: const Offset(0, -5),
+                    )
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Left: Reset / Clear Button
-                    _ControlButton(
-                      icon: Icons.close,
-                      onPressed: isProcessing ? null : () => _showResetDialog(context, ref),
-                      tooltip: 'Clear / Restart',
-                    ),
-                    
-                    // Center: Record / Stop Button
-                    GestureDetector(
-                      onTap: () {
-                        if (isProcessing) return;
-                        if (isRecording) {
-                          notifier.stopRecording();
-                        } else if (recordState is Idle || recordState is ErrorState) {
-                          notifier.startRecording();
-                        }
-                      },
-                      child: Container(
-                        width: 80,
-                        height: 80,
-                        decoration: BoxDecoration(
-                          color: isRecording ? Theme.of(context).colorScheme.error : Theme.of(context).colorScheme.primaryContainer,
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white.withValues(alpha: 0.2), width: 2),
-                          boxShadow: [
-                            BoxShadow(
-                              color: (isRecording ? Theme.of(context).colorScheme.error : Theme.of(context).colorScheme.primaryContainer).withValues(alpha: 0.2),
-                              blurRadius: 12,
-                              offset: const Offset(0, 4),
+                    // Timer and Waveform Dummy
+                    if (isRecording || isProcessing) ...[
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          if (isRecording)
+                            const Icon(Icons.graphic_eq, color: Colors.blueAccent, size: 24),
+                          if (isRecording) const SizedBox(width: 12),
+                          Text(
+                            _formatTime(recordingTime),
+                            style: const TextStyle(
+                              fontFamily: 'monospace',
+                              fontSize: 32,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 2,
                             ),
-                          ],
-                        ),
-                        child: Icon(
-                          isRecording ? Icons.stop : Icons.mic,
-                          color: Colors.white,
-                          size: 32,
-                        ),
+                          ),
+                        ],
                       ),
-                    ),
-                    
-                    // Right: Save Button
-                    _ControlButton(
-                      icon: Icons.save,
-                      onPressed: isProcessing ? null : () => _showSaveDialog(context, ref),
-                      tooltip: 'Save Note',
+                      const SizedBox(height: 24),
+                    ],
+
+                    // Control Buttons
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        _ControlButton(
+                          icon: Icons.close,
+                          onPressed: isProcessing ? null : () => _showResetDialog(context, ref),
+                          tooltip: 'Clear',
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                        
+                        GestureDetector(
+                          onTap: () {
+                            if (isProcessing) return;
+                            if (isRecording) {
+                              notifier.stopRecording();
+                            } else if (recordState is Idle || recordState is ErrorState) {
+                              notifier.startRecording();
+                            }
+                          },
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 300),
+                            width: isRecording ? 72 : 80,
+                            height: isRecording ? 72 : 80,
+                            decoration: BoxDecoration(
+                              color: isRecording 
+                                ? Theme.of(context).colorScheme.errorContainer 
+                                : Theme.of(context).colorScheme.primary,
+                              shape: BoxShape.rectangle,
+                              borderRadius: isRecording ? BorderRadius.circular(24) : BorderRadius.circular(40),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: (isRecording ? Colors.red : Theme.of(context).colorScheme.primary).withValues(alpha: 0.3),
+                                  blurRadius: 16,
+                                  offset: const Offset(0, 8),
+                                ),
+                              ],
+                            ),
+                            child: Icon(
+                              isRecording ? Icons.stop_rounded : Icons.mic_rounded,
+                              color: isRecording ? Theme.of(context).colorScheme.onErrorContainer : Theme.of(context).colorScheme.onPrimary,
+                              size: 36,
+                            ),
+                          ),
+                        ),
+                        
+                        _ControlButton(
+                          icon: Icons.check,
+                          onPressed: isProcessing ? null : () => _showSaveDialog(context, ref),
+                          tooltip: 'Save',
+                          color: Colors.green,
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -188,8 +196,18 @@ class RecordScreen extends ConsumerWidget {
           if (isProcessing)
             Container(
               color: Colors.black.withValues(alpha: 0.5),
-              child: const Center(
-                child: CircularProgressIndicator(),
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const CircularProgressIndicator(color: Colors.white),
+                    const SizedBox(height: 16),
+                    Text(
+                      'AI is analyzing your notes...',
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Colors.white),
+                    ),
+                  ],
+                ),
               ),
             ),
         ],
@@ -217,22 +235,43 @@ class RecordScreen extends ConsumerWidget {
 
     if (text.isEmpty) {
       return Center(
-        child: Text(
-          'Tap the microphone to start transcribing...',
-          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-            color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
-          ),
-          textAlign: TextAlign.center,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.record_voice_over, size: 64, color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2)),
+            const SizedBox(height: 24),
+            Text(
+              'Ready to Transcribe',
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Tap the microphone below to start recording meetings or lectures.',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.outline,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
         ),
       );
     }
 
     return SingleChildScrollView(
-      child: Text(
-        text,
-        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-          color: Theme.of(context).colorScheme.onSurface,
-          height: 1.6,
+      reverse: true, // Auto-scrolls to the bottom
+      physics: const BouncingScrollPhysics(),
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 24.0),
+        child: Text(
+          text,
+          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+            color: Theme.of(context).colorScheme.onSurface,
+            height: 1.5,
+            fontWeight: FontWeight.w400,
+          ),
         ),
       ),
     );
@@ -242,19 +281,19 @@ class RecordScreen extends ConsumerWidget {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Restart'),
-        content: const Text('Are you sure you want to clear the current transcript and restart?'),
+        title: const Text('Discard Recording?'),
+        content: const Text('Are you sure you want to clear the current transcript? This action cannot be undone.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
             child: const Text('Cancel'),
           ),
-          FilledButton(
+          FilledButton.tonal(
             onPressed: () {
               ref.read(recordStateProvider.notifier).reset();
               Navigator.of(ctx).pop();
             },
-            child: const Text('Restart'),
+            child: const Text('Discard', style: TextStyle(color: Colors.red)),
           ),
         ],
       ),
@@ -284,7 +323,7 @@ class RecordScreen extends ConsumerWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Do you want to save this text and let AI summarize it?'),
+            const Text('AI will now summarize this transcript.'),
             const SizedBox(height: 16),
             TextField(
               controller: titleController,
@@ -307,12 +346,13 @@ class RecordScreen extends ConsumerWidget {
               ref.read(recordStateProvider.notifier).saveAndProcess(customTitle.isNotEmpty ? customTitle : null);
               Navigator.of(ctx).pop();
             },
-            child: const Text('Save'),
+            child: const Text('Save & Summarize'),
           ),
         ],
       ),
     );
   }
+
   void _showManualInputDialog(BuildContext context, WidgetRef ref) {
     final textController = TextEditingController();
     showDialog(
@@ -323,7 +363,7 @@ class RecordScreen extends ConsumerWidget {
           controller: textController,
           maxLines: 5,
           decoration: const InputDecoration(
-            hintText: 'Type your note here to bypass speech recognition...',
+            hintText: 'Paste or type transcript here...',
             border: OutlineInputBorder(),
           ),
         ),
@@ -352,11 +392,13 @@ class _ControlButton extends StatelessWidget {
   final IconData icon;
   final VoidCallback? onPressed;
   final String tooltip;
+  final Color color;
 
   const _ControlButton({
     required this.icon,
     required this.onPressed,
     required this.tooltip,
+    required this.color,
   });
 
   @override
@@ -371,23 +413,15 @@ class _ControlButton extends StatelessWidget {
           height: 56,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: Theme.of(context).colorScheme.surface,
-            border: Border.all(color: const Color(0xFFDDE2E5)),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x0A000000),
-                blurRadius: 4,
-                offset: Offset(0, 4),
-              ),
-            ],
+            color: color.withValues(alpha: 0.1),
           ),
           child: Icon(
             icon,
-            color: onPressed == null ? Theme.of(context).colorScheme.outlineVariant : Theme.of(context).colorScheme.onSurfaceVariant,
+            color: onPressed == null ? Theme.of(context).colorScheme.outlineVariant : color,
+            size: 28,
           ),
         ),
       ),
     );
   }
 }
-

@@ -78,7 +78,6 @@ $transcript
         'homework': [],
         'exam': [],
         'keywords': '',
-        'flashcards': [],
       };
 
       return Success(jsonEncode(result));
@@ -121,47 +120,8 @@ $transcript
     }
   }
 
-  Future<Result<String>> generateFlashcards(String transcript) async {
-    try {
-      await _initLlama();
-      final prompt = '''<|im_start|>system
-Create 5 flashcards from the following Thai lecture transcript to help the student study.
-Return strictly as JSON:
-{
-  "flashcards": [
-    {
-      "q": "Question in Thai",
-      "a": "Answer in Thai"
-    }
-  ]
-}
-<|im_end|>
-<|im_start|>user
-$transcript
-<|im_end|>
-<|im_start|>assistant
-''';
-
-      _llama!.sendPrompt(prompt);
-      String resultStr = "";
-      await for (final token in _llama!.stream) {
-        resultStr += token;
-        if (resultStr.contains("<|im_end|>")) {
-          resultStr = resultStr.replaceAll("<|im_end|>", "");
-          break;
-        }
-      }
-      
-      resultStr = resultStr.replaceAll(RegExp(r'```json|```'), '').trim();
-      return Success(resultStr);
-    } catch (e, st) {
-      return Failure('Flashcard generation failed: $e', e, st);
-    }
-  }
-
   void dispose() {
     _llama?.stop();
     _llama = null;
   }
 }
-

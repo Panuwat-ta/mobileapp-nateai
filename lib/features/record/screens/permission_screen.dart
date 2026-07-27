@@ -3,6 +3,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 
 import '../../home/screens/main_screen.dart';
+import '../../../main.dart';
 class PermissionScreen extends StatelessWidget {
   const PermissionScreen({super.key});
 
@@ -18,7 +19,7 @@ class PermissionScreen extends StatelessWidget {
 
     if (micGranted && overlayGranted && context.mounted) {
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => const MainScreen()),
+        MaterialPageRoute(builder: (_) => const AppStartup()),
       );
     } else if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(

@@ -1,13 +1,17 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
 import 'app/theme/app_theme.dart';
 import 'app/constants/app_constants.dart';
 import 'app/providers/theme_provider.dart';
 import 'features/record/screens/permission_screen.dart';
 import 'features/record/screens/overlay_screen.dart';
 import 'features/home/screens/main_screen.dart';
+import 'features/settings/screens/model_download_screen.dart';
 
 @pragma("vm:entry-point")
 void overlayMain() {
@@ -59,6 +63,7 @@ class AppStartup extends StatefulWidget {
 class _AppStartupState extends State<AppStartup> {
   bool _isLoading = true;
   bool _isPermissionGranted = false;
+  bool _isModelDownloaded = false;
 
   @override
   void initState() {
@@ -71,9 +76,19 @@ class _AppStartupState extends State<AppStartup> {
       final status = await Permission.microphone.status;
       final overlayStatus = await FlutterOverlayWindow.isPermissionGranted();
       
+      // Check for downloaded models
+      final prefs = await SharedPreferences.getInstance();
+      
+      final qwenPath = prefs.getString('local_model_path');
+      bool hasQwen = qwenPath != null && File(qwenPath).existsSync();
+      
+      final whisperPath = prefs.getString('whisper_model_path');
+      bool hasWhisper = whisperPath != null && File(whisperPath).existsSync();
+      
       if (mounted) {
         setState(() {
           _isPermissionGranted = status.isGranted && overlayStatus;
+          _isModelDownloaded = hasQwen && hasWhisper;
           _isLoading = false;
         });
       }
@@ -81,6 +96,7 @@ class _AppStartupState extends State<AppStartup> {
       if (mounted) {
         setState(() {
           _isPermissionGranted = false;
+          _isModelDownloaded = false;
           _isLoading = false;
         });
       }
@@ -96,10 +112,14 @@ class _AppStartupState extends State<AppStartup> {
       );
     }
     
-    if (_isPermissionGranted) {
-      return const MainScreen();
-    } else {
+    if (!_isPermissionGranted) {
       return const PermissionScreen();
+    } 
+    
+    if (!_isModelDownloaded) {
+      return const ModelDownloadScreen();
     }
+
+    return const MainScreen();
   }
 }
